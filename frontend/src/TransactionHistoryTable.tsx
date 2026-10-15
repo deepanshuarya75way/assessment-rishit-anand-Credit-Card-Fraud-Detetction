@@ -103,18 +103,19 @@ export const TransactionHistoryTable: React.FC<TransactionHistoryTableProps> = (
               <th>ML Status</th>
               <th>Risk Score</th>
               <th style={{ textAlign: 'right' }}>Actions</th>
+              <th>UPDATE</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '36px' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '36px' }}>
                   <span style={{ color: 'var(--accent-cyan)' }}>Loading transactions from PostgreSQL...</span>
                 </td>
               </tr>
             ) : transactions.length === 0 ? (
               <tr>
-                <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-subtle)' }}>
+                <td colSpan={9} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-subtle)' }}>
                   No matching transactions found. Try adjusting your search query or filters.
                 </td>
               </tr>
@@ -123,41 +124,56 @@ export const TransactionHistoryTable: React.FC<TransactionHistoryTableProps> = (
                 const isFraud = txn.is_fraud;
                 return (
                   <tr key={txn.id}>
+                    {/* 1. Transaction ID */}
                     <td>
                       <span className="txn-code">{txn.transaction_id}</span>
                     </td>
+
+                    {/* 2. Date & Time */}
                     <td>
                       <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                         {txn.timestamp ? new Date(txn.timestamp).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : 'N/A'}
                       </span>
                     </td>
+
+                    {/* 3. Merchant & Category */}
                     <td>
                       <div>
                         <div style={{ fontWeight: 600, color: 'var(--text-main)' }}>{txn.merchant}</div>
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-subtle)' }}>{txn.category}</div>
                       </div>
                     </td>
+
+                    {/* 4. Card / Location */}
                     <td>
                       <div>
                         <div style={{ fontSize: '0.8rem' }}>•• {txn.card_last_four}</div>
                         <div style={{ fontSize: '0.74rem', color: 'var(--text-subtle)' }}>{txn.location}</div>
                       </div>
                     </td>
+
+                    {/* 5. Amount */}
                     <td>
                       <span style={{ fontWeight: 700, color: 'var(--text-main)' }}>
-                        ${txn.amount.toFixed(2)}
+                        \${txn.amount.toFixed(2)}
                       </span>
                     </td>
+
+                    {/* 6. ML Status */}
                     <td>
                       <span className={`badge-status ${isFraud ? 'fraud' : 'legit'}`}>
                         {isFraud ? '🚨 Suspicious' : '✓ Safe'}
                       </span>
                     </td>
+
+                    {/* 7. Risk Score */}
                     <td>
                       <span style={{ fontWeight: 700, color: isFraud ? 'var(--accent-ruby)' : 'var(--accent-emerald)' }}>
                         {txn.fraud_probability}%
                       </span>
                     </td>
+
+                    {/* 8. Actions column */}
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '6px' }}>
                         <button
@@ -179,6 +195,45 @@ export const TransactionHistoryTable: React.FC<TransactionHistoryTableProps> = (
                           <Trash2 size={14} />
                         </button>
                       </div>
+                    </td>
+
+                    {/* 9. DECOUPLED UPDATE COLUMN (Fires global custom windows communication event) */}
+                    <td style={{ textAlign: 'center', padding: '12px' }}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          // Dispatches full transaction history dataset to the target input fields form event listener block
+                          const event = new CustomEvent('loadHistoryTxnIntoForm', {
+                            detail: {
+                              ...txn, // Spreads all database attributes including is_fraud, fraud_probability, risk_level, notes, etc.
+                              amount: txn.amount.toString(), // Overrides amount as a string for input field compatibility
+                              merchant: txn.merchant,
+                              card_last_four: txn.card_last_four || '4242',
+                              location: txn.location,
+                              category: txn.category || 'E-Commerce',
+                              is_foreign: txn.is_foreign || false,
+                              distance_km: txn.distance_km || 0,
+                              pin_used: txn.pin_used !== undefined ? txn.pin_used : true,
+                            }
+                          });
+                          // Fire the event across the browser window to your form listener block
+                          window.dispatchEvent(event);
+                        }}
+
+                        style={{
+                          backgroundColor: 'var(--accent-amber, #f59e0b)',
+                          color: '#fff',
+                          border: 'none',
+                          padding: '6px 12px',
+                          borderRadius: '4px',
+                          fontSize: '0.75rem',
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          transition: 'background-color 0.2s'
+                        }}
+                      >
+                        ⚙️ Update
+                      </button>
                     </td>
                   </tr>
                 );

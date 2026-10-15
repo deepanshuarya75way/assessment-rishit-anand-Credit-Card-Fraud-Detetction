@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 from typing import Optional
 from contextlib import asynccontextmanager
@@ -15,6 +16,9 @@ from schemas import (
     PaginatedTransactionsResponse,
 )
 from ml_service import ml_service
+from pydantic import BaseModel
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
 
 @asynccontextmanager
@@ -232,33 +236,30 @@ def get_dashboard_stats(db: Session = Depends(get_db)):
 
 @app.get("/api/transactions/{transaction_id}", response_model=TransactionResponse)
 def get_transaction_by_id(transaction_id: str, db: Session = Depends(get_db)):
-    """Retrieve a single transaction by ID or database ID"""
-    if transaction_id.isdigit():
-        txn = db.query(Transaction).filter(Transaction.id == int(transaction_id)).first()
-    else:
-        txn = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
-
-    if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-    return txn.to_dict()
-
-
-@app.delete("/api/transactions/{transaction_id}", status_code=status.HTTP_200_OK)
-def delete_transaction(transaction_id: str, db: Session = Depends(get_db)):
-    """Delete a transaction by ID (CRUD demonstration)"""
-    if transaction_id.isdigit():
-        txn = db.query(Transaction).filter(Transaction.id == int(transaction_id)).first()
-    else:
-        txn = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
-
-    if not txn:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    db.delete(txn)
-    db.commit()
-    return {"message": f"Transaction {transaction_id} deleted successfully"}
+    """
+    GET /api/transactions/{transaction_id}:
+    Retrieves the full details of a specific transaction by its unique ID.
+    """
+    transaction = db.query(Transaction).filter(Transaction.transaction_id == transaction_id).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail=f"Transaction with ID {transaction_id} not found.")
+    return transaction.to_dict()
 
 
-if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run("main:app", host="127.0.0.1", port=8000, reload=True)
+@app.delete("/api/transactions/{id}", status_code=status.HTTP_200_OK)
+def delete_transaction(id: int, db: Session = Depends(get_db)):
+    """
+    DELETE /api/transactions/{id}:
+    Deletes a transaction record from the PostgreSQL history logs using its database primary key integer ID.
+    """
+    transaction = db.query(Transaction).filter(Transaction.id == id).first()
+    if not transaction:
+        raise HTTPException(status_code=404, detail="Transaction record not found.")
+    
+    try:
+        db.delete(transaction)
+        db.commit()
+        return {"status": "success", "message": f"Transaction record {id} deleted successfully."}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete transaction record: {str(e)}")

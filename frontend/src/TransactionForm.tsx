@@ -21,6 +21,56 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, load
 
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // --- ADD THIS BLOCK TO LISTEN FOR UPDATE BUTTON CLICKS ---
+  // --- REPLACE YOUR CURRENT React.useEffect BLOCK WITH THIS ---
+  React.useEffect(() => {
+    const handleTxnUpdateEvent = (event: Event) => {
+      // Cast the custom event to accept a broad structured dataset
+      const customEvent = event as CustomEvent<any>;
+      if (customEvent.detail) {
+        // 1. Populate your active form text input fields
+        setFormData(customEvent.detail);
+
+        // 2. Clear any lingering red input validation messages
+        setErrors({});
+
+        // 3. Force the parent view to display this transaction's past outcome data instantly
+        const broadcastResult = new CustomEvent('loadHistoryResultIntoDisplay', {
+          detail: {
+            id: customEvent.detail.id,
+            transaction_id: customEvent.detail.transaction_id,
+            timestamp: customEvent.detail.timestamp,
+            amount: parseFloat(customEvent.detail.amount),
+            merchant: customEvent.detail.merchant,
+            category: customEvent.detail.category,
+            card_last_four: customEvent.detail.card_last_four,
+            location: customEvent.detail.location,
+            prediction: customEvent.detail.prediction,
+            is_fraud: customEvent.detail.is_fraud,
+            fraud_probability: customEvent.detail.fraud_probability,
+            risk_level: customEvent.detail.risk_level,
+            notes: customEvent.detail.notes,
+            features: customEvent.detail.features
+          }
+        });
+        window.dispatchEvent(broadcastResult);
+
+        // 4. Smoothly scroll the user's view panel back up to the main input dashboard scanner section
+        const element = document.getElementById("transaction-input-panel");
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+      }
+    };
+
+    window.addEventListener('loadHistoryTxnIntoForm', handleTxnUpdateEvent);
+    return () => window.removeEventListener('loadHistoryTxnIntoForm', handleTxnUpdateEvent);
+  }, []);
+  // -----------------------------------------------------------
+
+
   const validate = (): boolean => {
     const errs: Record<string, string> = {};
     const amt = parseFloat(formData.amount);
@@ -41,12 +91,45 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ onSubmit, load
     return Object.keys(errs).length === 0;
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (validate()) {
-      onSubmit(formData);
+
+    if (!validate()) return;
+
+    try {
+      const backendPayload = {
+        amount: parseFloat(formData.amount),
+        merchant: formData.merchant,
+        card_last_four: formData.card_last_four,
+        location: formData.location,
+        category: formData.category,
+        is_foreign: formData.is_foreign,
+        distance_km: formData.distance_km,
+        pin_used: formData.pin_used,
+        time_offset: 0.0,
+        v_features: Array(28).fill(0.0)
+      };
+
+      const response = await fetch("http://localhost:8000/api/predict", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(backendPayload),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log("Prediction complete and stored in PostgreSQL:", result);
+
+        await onSubmit(formData);
+        window.dispatchEvent(new CustomEvent('refreshPostgresHistoryLogs'));
+      } else {
+        console.error("API error response code:", response.status);
+      }
+    } catch (error) {
+      console.error("Failed to connect to Python server:", error);
     }
   };
+
 
   const applyPreset = (preset: 'normal' | 'luxury' | 'crypto') => {
     if (preset === 'normal') {
